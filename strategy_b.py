@@ -2,18 +2,16 @@ from data import get_prices
 from signals import compute_zscore
 
 
-def strategy_a_signal(z, position):
+def strategy_b_signal(z, position, holding_period=None):
     if position is None:
         if z > 2:
-            return "enter_short_MU"
-        elif z < -2:
             return "enter_long_MU"
+        elif z < -2:
+            return "enter_short_MU"
         else:
             return "hold"
     else:
-        if position == "short_MU" and z <= 0:
-            return "exit"
-        elif position == "long_MU" and z >= 0:
+        if holding_period and holding_period >= 40:
             return "exit"
         else:
             return "hold"
@@ -33,7 +31,14 @@ wdc_entry = None
 for date, row in prices.iterrows():
     mu_price = row['MU']
     wdc_price = row['WDC']
-    signal = strategy_a_signal(z[date], position)
+
+    if en_date:
+        holding_period = (date - en_date).days
+    else:
+        holding_period = None
+
+    signal = strategy_b_signal(z[date], position, holding_period)
+
 
     if position is None:
         if signal == "enter_short_MU":
@@ -75,5 +80,38 @@ if position:
         "wdc_exit": last_wdc
     })
 
-print(len(trades))
-print(trades[0])
+
+def calculate_pnl(trade):
+    if trade["direction"] == "short_MU":
+        leg1 = (trade["mu_entry"] - trade["mu_exit"]) / trade["mu_entry"]
+        leg2 = (trade["wdc_exit"] - trade["wdc_entry"]) / trade["wdc_entry"]
+    else:
+        leg1 = (trade["mu_exit"] - trade["mu_entry"]) / trade["mu_entry"]
+        leg2 = (trade["wdc_entry"] - trade["wdc_exit"]) / trade["wdc_entry"]
+
+    return (leg1 + leg2) / 2
+
+pnls = []
+for trade in trades:
+    pnl = calculate_pnl(trade)
+    trade["pnl"] = pnl
+    pnls.append(pnl)
+
+total_growth = 1
+
+for pnl in pnls:
+    total_growth = total_growth * (1 + pnl)
+
+total_return = total_growth - 1
+print("total return:", total_return)
+
+wins = [p for p in pnls if p > 0]
+win_rate = len(wins) / len(pnls)
+print("Win rate:", win_rate)
+
+losses = [p for p in pnls if p <= 0]
+
+avg_win = sum(wins) / len(wins)
+avg_loss = sum(losses) / len(losses)
+print("Average win:", avg_win)
+print("Average loss:", avg_loss)
